@@ -1,0 +1,182 @@
+---
+title: "Workbook"
+author: "Edward Kurniady"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  tidy = TRUE, 
+  tidy.opts = list(width.cutoff = 60)
+)
+```
+
+# Libraries and Their Config
+
+```{r, warning = FALSE, message = FALSE}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(tseries)
+library(forecast)
+library(reshape2)
+```
+
+```{r}
+theme_set(new = theme_minimal() + theme(panel.grid.minor = element_blank()))
+```
+
+# Initial Inspection
+
+```{r}
+raw.data <- read.csv(file = 'chlorophyll.csv')
+# str(raw.data)
+# summary(raw.data)
+which(x = (raw.data == 48.9), arr.ind = TRUE)
+```
+
+The dataset consists of 139 rows and 38 columns. Overall, the data appears to be clean and well-structured. However, it's worth noting that there is a potential outlier with the value 48.9. This outlier is located in the Jan.22 column of the 78th observation (row 78 and column 33).
+
+# Data Cleaning
+
+Handling outlier 48.9:
+
+```{r}
+flora <- raw.data
+flora[ 78, 33 ] <- median(flora[ , 33 ])
+flora[ 78, 33 ]
+```
+
+# EDA
+
+### Inspecting Categorical Variable
+
+```{r}
+ggplot(data = flora, aes(x = Location)) +
+  geom_bar(fill = 'steelblue') +
+  geom_text(stat = 'count', aes(label = after_stat(count)), vjust = -0.2)
+```
+
+With 46 plants classified as "near" (\\\<50m) and 93 plants categorized as "far" (\\\>50m), the dataset exhibits a relatively balanced distribution between the two groups.
+
+### Inspecting Numerical Variable
+
+```{r}
+flora[ -1 ] %>% 
+  # log() %>%
+  # sqrt() %>%
+  melt(id.vars = NULL, variable.name = 'Date', value.name = 'Chloro') %>%
+  ggplot(aes(y = Chloro)) +
+    geom_boxplot() 
+```
+
+The boxplot reveals that the majority of chlorophyll levels cluster around 0.75, however there is a substantial number of chlorophyll values at or below 0.5, which the boxplot identifies as outliers. Intriguingly, applying transformations such as logarithmic (log) and square root (sqrt) does not mitigate these outliers. To gain deeper insights, let's explore the numerical data by plotting it across time.
+
+### Inspecting Chlorophyll Levels Across Time
+
+```{r}
+flora.mean <- flora %>%
+  group_by(Location) %>%
+  summarise_all(mean) %>%
+  pivot_longer(cols = -1, names_to = 'Time', values_to = 'Chloro') %>%
+  mutate(Time = as.Date(x = paste('01', Time), format = '%d %b.%y'))
+
+flora.mean %>%
+  ggplot(aes(x = Time, y = Chloro, group = Location, color = Location)) +
+    geom_line() +
+    labs(title = 'Average Chlorophyll Across Time') +
+    scale_color_manual(values = c('red', 'blue')) +
+    geom_vline(xintercept = as.Date('2017-06-01'), linetype = 'dashed')
+```
+
+The average lines depict the hallmark oscillations typical of time series data. The bulk of values oscillates around the 0.7 mark, punctuated by periodic declines at the start of each new year. Notably, January 2020 recorded the lowest average, hovering around 0.5, which was 0.1 lower than in other new years.
+
+These cyclic patterns in the data provide a clear rationale for our earlier observations in the boxplot analysis. Specifically, they elucidate the factors behind the boxplot's range lies around 0.75, while the recurring drops account for the numerous outliers. These dynamics suggest that the data is better suited for a time series analysis, rather than a typical linear one.
+
+The averaged time series line for both far and near plants have similar shapes, displaying no distinct trend but exhibiting seasonality (drops). Neither of the time series exhibits changing variance or heteroscedasticity.
+
+Furthermore, upon comparing the line patterns before and after the mining period, no discernible difference is observed. This suggests that the mining activities do not have a pronounced impact on the overall shape of the chlorophyll time series.
+
+# Data Transformation
+
+A notable feature of the data is that there are only 4 columns before mining commenced in June 2017, representing the pre-intervention data, while the remaining 33 columns pertain to post-intervention data. This disparity suggests that backcasting might be a more suitable approach for the analysis. Hence, let us reverse the date columns:
+
+```{r}
+flora <- flora[ , c(1, 38 : 2) ]
+```
+
+# Modelling
+
+```{r, include = FALSE}
+results <- data.frame(
+  location = character(),
+  oob1 = logical(),
+  oob2 = logical(),
+  oob3 = logical(),
+  oob4 = logical(),
+  rmse1 = numeric(),
+  rmse2 = numeric(),
+  rmse3 = numeric(),
+  rmse4 = numeric(),
+  is.white = character()
+)
+
+for (i in 1 : nrow(flora)) {
+  row <- flora[ i, ] %>%
+    pivot_longer(cols = -1, names_to = 'Time', values_to = 'Chloro') %>%
+    mutate(Time = as.Date(x = paste('01', Time), format = '%d %b.%y'))
+
+  # Auto ARIMA
+  row.arima <- ts(data = row[ 1 : 33, ]$Chloro, frequency = 6) %>%
+    auto.arima(
+      num.cores = NULL, 
+      stationary = FALSE, 
+      seasonal = TRUE, 
+      stepwise = FALSE
+    )
+  res.check <- checkresiduals(object = row.arima, plot = FALSE)
+  row.cast <- forecast(row.arima, h = 4)
+  row.actual <- row[ 34 : 37, ]$Chloro
+  row.pred <-  row.cast$mean[ 1 : 4 ]
+  row.upper <- row.cast$upper[ 1 : 4, 1 ]
+  row.lower <- row.cast$lower[ 1 : 4, 1 ]
+  
+  out.bounds <- row.pred > row.upper | row.pred < row.lower
+  rmse <- abs(row.pred - row.actual)
+  
+  results[ i, ] <- c(
+    location = flora[ i, 1 ],
+    oob1 = out.bounds[ 1 ],
+    oob2 = out.bounds[ 2 ],
+    oob3 = out.bounds[ 3 ],
+    oob4 = out.bounds[ 4 ],
+    rmse1 = rmse[ 1 ],
+    rmse2 = rmse[ 2 ],
+    rmse3 = rmse[ 3 ],
+    rmse4 = rmse[ 4 ],
+    white_residuals = toString(res.check$p.value >= 0.05)
+  )
+}
+```
+
+```{r}
+results
+```
+
+```{r}
+results %>%
+  subset(location == '>50m') %>%
+  select(rmse1, rmse2, rmse3, rmse4) %>%
+  sapply(as.numeric) %>%
+  colMeans() 
+```
+
+```{r}
+results %>%
+  subset(location == '<50m') %>%
+  select(rmse1, rmse2, rmse3, rmse4) %>%
+  sapply(as.numeric) %>%
+  colMeans()
+```
