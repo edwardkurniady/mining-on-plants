@@ -3,7 +3,7 @@
 
 ## Overview
 
-Mining can have negative impacts on the surrounding ecosystem. In this case study, I analyzed bimonthly chlorophyll measurements of *Imaginaria Flora* to determine whether mining has had a discernable effect on the health of the plants.
+Mining can have negative impacts on the surrounding ecosystem. In this study, I analyzed bimonthly chlorophyll measurements of *Imaginaria Flora* to determine whether mining has had a discernable effect on the health of the plants based on their chlorophyll levels.
 
 
 ## Methodology
