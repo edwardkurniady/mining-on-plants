@@ -16,5 +16,5 @@ The research was conducted using R and recorded in an R Markdown, with the follo
 
 ## Results
 
-The ARIMA models, trained on chlorophyll levels associated with mining activity, were able to accurately forecasts chlorophyll levels before mining commenced. Consequently, the findings of this study did not reveal any significant impact of the mining activity on the health of plants in the area.
+The ARIMA models, trained on chlorophyll levels associated with mining activity, were able to accurately forecasts chlorophyll levels before mining commenced. Consequently, the findings of this brief study did not reveal any significant impact of the mining activity on the health of plants in the area.
 
