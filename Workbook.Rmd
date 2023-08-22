@@ -107,7 +107,105 @@ A notable feature of the data is that there are only 4 columns before mining com
 flora <- flora[ , c(1, 38 : 2) ]
 ```
 
+Preparing the averaged time series
+
+```{r}
+far.long <- flora.mean[ flora.mean$Location == '>50m', ]
+ts.far <- ts(
+  data = far.long[ -1 : -4, ]$Chloro, 
+  start = max(far.long$Time),
+  frequency = 6
+)
+
+near.long <- flora.mean[ flora.mean$Location == '<50m', ]
+ts.near <- ts(
+  data = near.long[ -1 : -4, ]$Chloro, 
+  start = max(near.long$Time),
+  frequency = 6
+)
+```
+
 # Modelling
+
+### Far Plants ARIMA
+
+```{r}
+acf(ts.far, lag.max = 50, main = 'ACF Test')
+pacf(ts.far, lag.max = 50, main = 'PACF Test')
+adf.test(ts.far)
+kpss.test(ts.far)
+```
+
+ADF and KPSS tests confirm that the time series is stationary. ACF shows gradual decay, suggesting AR component. PACF displays no significant partial auto correlation even at lag 1, therefore AR(0) is our model of choice.
+
+```{r}
+far.arima <- arima(x = ts.far, order = c(0, 0, 0))
+Box.test(residuals(far.arima), type = 'Ljung-Box')
+Box.test(residuals(far.arima), type = 'Box-Pierce')
+```
+
+The Ljung and Pierce Box tests confirm that the model's residuals exhibit white noise characteristics, indicating the model passes the diagnostic tests successfully. Next, let's perform the forecasting.
+
+```{r}
+far.cast <- forecast(far.arima, h = 4)
+far.actual <- far.long[ 4 : 1, ]$Chloro
+far.pred <-  far.cast$mean[ 1 : 4 ]
+far.upper <- far.cast$upper[ 1 : 4, 1 ]
+far.lower <- far.cast$lower[ 1 : 4, 1 ]
+```
+
+The prediction error:
+
+```{r}
+abs(far.pred - far.actual)
+```
+
+Are the actual values outside of 80% prediction interval range?
+
+```{r}
+far.pred > far.upper | far.pred < far.lower
+```
+
+### Near Plants ARIMA
+
+```{r}
+acf(ts.near, lag.max = 50, main = 'ACF Test')
+pacf(ts.near, lag.max = 50, main = 'PACF Test')
+adf.test(ts.near)
+kpss.test(ts.near)
+```
+
+Similar to the previous far plants time series, the near plants time series is stationary. The ACF and PACF also have similar patterns, therefore AR(0) is our model of choice.
+
+```{r}
+near.arima <- arima(x = ts.near, order = c(0, 0, 0))
+Box.test(residuals(near.arima), type = 'Ljung-Box')
+Box.test(residuals(near.arima), type = 'Box-Pierce')
+```
+
+Same with the far arima, the model diagnostics look good.
+
+```{r}
+near.cast <- forecast(near.arima, h = 4)
+near.actual <- near.long[ 4 : 1, ]$Chloro
+near.pred <-  near.cast$mean[ 1 : 4 ]
+near.upper <- near.cast$upper[ 1 : 4, 1 ]
+near.lower <- near.cast$lower[ 1 : 4, 1 ]
+```
+
+The prediction error:
+
+```{r}
+abs(near.pred - near.actual)
+```
+
+Are the actual values outside of 80% prediction interval range?
+
+```{r}
+near.pred > near.upper | near.pred < near.lower
+```
+
+### Individual ARIMA
 
 ```{r, include = FALSE}
 results <- data.frame(
@@ -179,4 +277,8 @@ results %>%
   select(rmse1, rmse2, rmse3, rmse4) %>%
   sapply(as.numeric) %>%
   colMeans()
+```
+
+```{r}
+
 ```
